@@ -1,11 +1,13 @@
 from fastapi import FastAPI
 
-from app.api.v1 import health
+from app.api.v1 import health, auth
+from app.core.config import settings
 
 app = FastAPI(
-    title="ChatApp API",
-    version="0.1.0",
+    title=settings.PROJECT_NAME,
+    version=settings.VERSION,
     description="Real-time chat backend: FastAPI + WebSockets + Redis + PostgreSQL",
 )
 
-app.include_router(health.router, prefix="/api/v1")
+app.include_router(health.router, prefix=settings.API_V1_PREFIX)
+app.include_router(auth.router, prefix=settings.API_V1_PREFIX)
