@@ -1,11 +1,20 @@
+import uuid
+
+import jwt
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.security import create_access_token, create_refresh_token, hash_password, verify_password
+from app.core.security import (
+    create_access_token,
+    create_refresh_token,
+    decode_token,
+    hash_password,
+    verify_password,
+)
 from app.db.session import get_db
 from app.models import User
-from app.schemas.auth import AuthResponse
+from app.schemas.auth import AuthResponse, RefreshRequest
 from app.schemas.user import UserCreate
 from app.services import user_service
 
@@ -44,4 +53,16 @@ async def login(
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Incorrect username or password")
     if not user.is_active:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Account is disabled")
+    return _build_auth_response(user)
+
+
+@router.post("/refresh", response_model=AuthResponse)
+async def refresh(payload: RefreshRequest, db: AsyncSession = Depends(get_db)) -> AuthResponse:
+    try:
+        token_payload = decode_token(payload.refresh_token, "refresh")
+    except jwt.PyJWTError:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid refresh token")
+    user = await db.get(User, uuid.UUID(token_payload["sub"]))
+    if user is None or not user.is_active:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid refresh token")
     return _build_auth_response(user)
