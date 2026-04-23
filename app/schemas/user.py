@@ -11,6 +11,12 @@ class UserCreate(BaseModel):
     full_name: str | None = Field(default=None, max_length=120)
 
 
+class UserUpdate(BaseModel):
+    full_name: str | None = Field(default=None, max_length=120)
+    bio: str | None = Field(default=None, max_length=280)
+    avatar_url: str | None = Field(default=None, max_length=500)
+
+
 class UserOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
