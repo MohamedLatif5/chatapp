@@ -73,3 +73,86 @@ async def get_or_create_dm(db: AsyncSession, me: User, other_id: uuid.UUID) -> C
         return (await db.execute(stmt)).scalar_one()
     stmt = select(Conversation).where(Conversation.id == conversation.id)
     return (await db.execute(stmt)).scalar_one()
+
+
+async def create_group(
+    db: AsyncSession, me: User, name: str, member_ids: list[uuid.UUID]
+) -> Conversation:
+    unique_ids = {mid for mid in member_ids if mid != me.id}
+    existing = list(
+        (await db.execute(select(User).where(User.id.in_(unique_ids)))).scalars().all()
+    )
+    if len(existing) != len(unique_ids):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "One or more users not found")
+
+    conversation = Conversation(
+        type=ConversationType.GROUP, name=name, created_by_id=me.id
+    )
+    db.add(conversation)
+    db.flush()
+    db.add(
+        ConversationMember(
+            conversation=conversation, user_id=me.id, role=MemberRole.ADMIN.value
+        )
+    )
+    for member in existing:
+        db.add(
+            ConversationMember(
+                conversation=conversation, user_id=member.id, role=MemberRole.MEMBER.value
+            )
+        )
+    await db.commit()
+    return (await db.execute(select(Conversation).where(Conversation.id == conversation.id))).scalar_one()
+
+
+async def require_admin(
+    db: AsyncSession, conversation_id: uuid.UUID, user_id: uuid.UUID
+) -> ConversationMember:
+    member = await ensure_member(db, conversation_id, user_id)
+    if member.role != MemberRole.ADMIN:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Admin privileges required")
+    return member
+
+
+async def add_members(
+    db: AsyncSession, conversation: Conversation, user_ids: list[uuid.UUID]
+) -> list[ConversationMember]:
+    if conversation.type != ConversationType.GROUP:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Members can only be added to groups")
+    existing_ids = {m.user_id for m in conversation.members}
+    new_ids = [uid for uid in dict.fromkeys(user_ids) if uid not in existing_ids]
+    if not new_ids:
+        return []
+    found = list(
+        (await db.execute(select(User).where(User.id.in_(new_ids)))).scalars().all()
+    )
+    members = [
+        ConversationMember(
+            conversation=conversation, user_id=u.id, role=MemberRole.MEMBER.value
+        )
+        for u in found
+    ]
+    db.add_all(members)
+    await db.commit()
+    for m in members:
+        await db.refresh(m)
+    return members
+
+
+async def remove_member(
+    db: AsyncSession, conversation: Conversation, target_id: uuid.UUID
+) -> None:
+    member = await get_member(db, conversation.id, target_id)
+    if member is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Member not found")
+    await db.delete(member)
+    await db.commit()
+
+
+async def rename_conversation(
+    db: AsyncSession, conversation: Conversation, name: str
+) -> Conversation:
+    conversation.name = name
+    await db.commit()
+    await db.refresh(conversation)
+    return conversation
