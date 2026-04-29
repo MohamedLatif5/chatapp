@@ -1,10 +1,10 @@
 import uuid
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Conversation, ConversationMember, ConversationType, MemberRole, User
+from app.models import Conversation, ConversationMember, ConversationType, MemberRole, Message, User
 
 
 async def get_member(
@@ -156,3 +156,53 @@ async def rename_conversation(
     await db.commit()
     await db.refresh(conversation)
     return conversation
+
+
+async def list_conversations(db: AsyncSession, user_id: uuid.UUID) -> list[dict]:
+    member_convos = (
+        select(ConversationMember.conversation_id)
+        .where(ConversationMember.user_id == user_id)
+        .subquery()
+    )
+    stmt = (
+        select(Conversation)
+        .join(member_convos, member_convos.c.conversation_id == Conversation.id)
+        .order_by(func.coalesce(Conversation.last_message_at, Conversation.created_at).desc())
+    )
+    conversations = list((await db.execute(stmt)).scalars().all())
+
+    unread_counts: dict[uuid.UUID, int] = {}
+    if conversations:
+        unread_stmt = (
+            select(Message.conversation_id, func.count().label("unread"))
+            .join(
+                ConversationMember,
+                and_(
+                    ConversationMember.conversation_id == Message.conversation_id,
+                    ConversationMember.user_id == user_id,
+                ),
+            )
+            .where(
+                Message.id > func.coalesce(ConversationMember.last_read_message_id, 0),
+                Message.sender_id != user_id,
+                Message.is_deleted.is_(False),
+            )
+            .group_by(Message.conversation_id)
+        )
+        rows = (await db.execute(unread_stmt)).all()
+        unread_counts = {row.conversation_id: row.unread for row in rows}
+
+    return [
+        {
+            "id": c.id,
+            "type": c.type,
+            "name": c.name,
+            "avatar_url": c.avatar_url,
+            "created_by_id": c.created_by_id,
+            "created_at": c.created_at,
+            "last_message_at": c.last_message_at,
+            "members": c.members,
+            "unread_count": unread_counts.get(c.id, 0),
+        }
+        for c in conversations
+    ]
