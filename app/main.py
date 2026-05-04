@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 
-from app.api.v1 import auth, conversations, health, users
+from app.api.v1 import auth, conversations, health, messages, users
 from app.core.config import settings
 
 app = FastAPI(
@@ -13,3 +13,4 @@ app.include_router(health.router, prefix=settings.API_V1_PREFIX)
 app.include_router(auth.router, prefix=settings.API_V1_PREFIX)
 app.include_router(users.router, prefix=settings.API_V1_PREFIX)
 app.include_router(conversations.router, prefix=settings.API_V1_PREFIX)
+app.include_router(messages.router, prefix=settings.API_V1_PREFIX)
