@@ -13,7 +13,8 @@ from app.schemas.conversation import (
     GroupUpdate,
     MembersAdd,
 )
-from app.services import conversation_service
+from app.schemas.message import MessageReadIn
+from app.services import conversation_service, message_service
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 
@@ -113,6 +114,24 @@ async def remove_member(
     if user_id != current_user.id:
         await conversation_service.require_admin(db, conversation_id, current_user.id)
     await conversation_service.remove_member(db, conversation, user_id)
+
+
+@router.post("/{conversation_id}/read")
+async def mark_read(
+    conversation_id: uuid.UUID,
+    payload: MessageReadIn,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, str | int]:
+    await get_conversation_or_404(conversation_id, db)
+    last_read = await message_service.mark_conversation_read(
+        db, current_user.id, conversation_id, payload.message_id
+    )
+    return {
+        "conversation_id": str(conversation_id),
+        "user_id": str(current_user.id),
+        "last_read_message_id": last_read,
+    }
 
 
 @router.post("/{conversation_id}/leave", status_code=status.HTTP_204_NO_CONTENT)

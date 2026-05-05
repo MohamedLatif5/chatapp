@@ -3,6 +3,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.message import MessageOut
 from app.schemas.user import UserOut
 
 
@@ -43,4 +44,5 @@ class ConversationOut(BaseModel):
     created_at: datetime
     last_message_at: datetime | None
     members: list[ConversationMemberOut]
+    last_message: MessageOut | None = None
     unread_count: int = 0

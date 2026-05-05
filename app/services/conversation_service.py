@@ -172,6 +172,7 @@ async def list_conversations(db: AsyncSession, user_id: uuid.UUID) -> list[dict]
     conversations = list((await db.execute(stmt)).scalars().all())
 
     unread_counts: dict[uuid.UUID, int] = {}
+    last_messages: dict[uuid.UUID, Message] = {}
     if conversations:
         unread_stmt = (
             select(Message.conversation_id, func.count().label("unread"))
@@ -192,6 +193,18 @@ async def list_conversations(db: AsyncSession, user_id: uuid.UUID) -> list[dict]
         rows = (await db.execute(unread_stmt)).all()
         unread_counts = {row.conversation_id: row.unread for row in rows}
 
+        max_ids = (
+            select(Message.conversation_id, func.max(Message.id).label("max_id"))
+            .where(Message.conversation_id.in_([c.id for c in conversations]))
+            .group_by(Message.conversation_id)
+            .subquery()
+        )
+        last_stmt = select(Message).join(
+            max_ids,
+            and_(max_ids.c.conversation_id == Message.conversation_id, max_ids.c.max_id == Message.id),
+        )
+        last_messages = {m.conversation_id: m for m in (await db.execute(last_stmt)).scalars()}
+
     return [
         {
             "id": c.id,
@@ -202,6 +215,7 @@ async def list_conversations(db: AsyncSession, user_id: uuid.UUID) -> list[dict]
             "created_at": c.created_at,
             "last_message_at": c.last_message_at,
             "members": c.members,
+            "last_message": last_messages.get(c.id),
             "unread_count": unread_counts.get(c.id, 0),
         }
         for c in conversations
