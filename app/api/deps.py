@@ -10,6 +10,7 @@ from app.core.config import settings
 from app.core.security import decode_token
 from app.db.session import get_db
 from app.models import User
+from app.services.realtime import RealtimeBroker, broker
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_PREFIX}/auth/login")
 
@@ -32,3 +33,7 @@ async def get_current_user(
     if user is None or not user.is_active:
         raise credentials_exception
     return user
+
+
+def get_broker() -> RealtimeBroker:
+    return broker

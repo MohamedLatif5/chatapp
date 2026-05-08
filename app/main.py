@@ -1,12 +1,26 @@
+from contextlib import asynccontextmanager
+from pathlib import Path
+
 from fastapi import FastAPI
 
 from app.api.v1 import auth, conversations, health, messages, users
 from app.core.config import settings
+from app.services.realtime import broker
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    Path(settings.UPLOAD_DIR).mkdir(parents=True, exist_ok=True)
+    await broker.start()
+    yield
+    await broker.stop()
+
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
     version=settings.VERSION,
     description="Real-time chat backend: FastAPI + WebSockets + Redis + PostgreSQL",
+    lifespan=lifespan,
 )
 
 app.include_router(health.router, prefix=settings.API_V1_PREFIX)
