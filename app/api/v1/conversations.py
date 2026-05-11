@@ -3,7 +3,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user
+from app.api.deps import get_broker, get_current_user
 from app.db.session import get_db
 from app.models import Conversation, ConversationType, User
 from app.schemas.conversation import (
@@ -15,6 +15,7 @@ from app.schemas.conversation import (
 )
 from app.schemas.message import MessageReadIn
 from app.services import conversation_service, message_service
+from app.services.realtime import RealtimeBroker
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 
@@ -122,10 +123,22 @@ async def mark_read(
     payload: MessageReadIn,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    broker: RealtimeBroker = Depends(get_broker),
 ) -> dict[str, str | int]:
     await get_conversation_or_404(conversation_id, db)
     last_read = await message_service.mark_conversation_read(
         db, current_user.id, conversation_id, payload.message_id
+    )
+    recipients = await conversation_service.get_member_ids(db, conversation_id)
+    await broker.publish_to_conversation(
+        conversation_id,
+        {
+            "type": "message.read",
+            "conversation_id": str(conversation_id),
+            "user_id": str(current_user.id),
+            "last_read_message_id": last_read,
+        },
+        recipients,
     )
     return {
         "conversation_id": str(conversation_id),
