@@ -42,6 +42,35 @@ async def _handle_ws_message(user_id: uuid.UUID, data: dict) -> None:
     await broker.publish_to_conversation(conversation_uuid, event, recipient_ids)
 
 
+async def _handle_typing(user_id: uuid.UUID, data: dict) -> None:
+    conversation_id = data.get("conversation_id")
+    if not conversation_id:
+        return
+    try:
+        conversation_uuid = uuid.UUID(str(conversation_id))
+    except ValueError:
+        return
+
+    async with db_session.SessionLocal() as db:
+        member = await conversation_service.get_member(db, conversation_uuid, user_id)
+        if member is None:
+            return
+        recipient_ids = [
+            uid for uid in await conversation_service.get_member_ids(db, conversation_uuid)
+            if uid != user_id
+        ]
+
+    await broker.publish_to_conversation(
+        conversation_uuid,
+        {
+            "type": "typing",
+            "conversation_id": str(conversation_uuid),
+            "user_id": str(user_id),
+        },
+        recipient_ids,
+    )
+
+
 @router.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket, token: str = Query(...)) -> None:
     try:
@@ -61,6 +90,8 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query(...)) -> N
                 await websocket.send_json({"type": "pong"})
             elif event_type == "message":
                 await _handle_ws_message(user_id, data)
+            elif event_type == "typing":
+                await _handle_typing(user_id, data)
     except WebSocketDisconnect:
         pass
     finally:
