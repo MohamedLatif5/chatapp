@@ -1,5 +1,6 @@
 import asyncio
 import json
+import time
 import uuid
 
 import redis.asyncio as aioredis
@@ -9,6 +10,9 @@ from app.core.config import settings
 
 CONVERSATION_CHANNEL_PREFIX = "chat:conversation:"
 PRESENCE_CHANNEL = "chat:presence"
+PRESENCE_ONLINE_KEY = "presence:online"
+PRESENCE_REFS_KEY = "presence:refs"
+PRESENCE_TTL_SECONDS = 75
 
 
 class ConnectionManager:
@@ -92,6 +96,47 @@ class RealtimeBroker:
 
     async def publish_presence(self, payload: dict, recipients) -> None:
         await self.publish(PRESENCE_CHANNEL, payload, recipients)
+
+    async def set_user_online(self, user_id: uuid.UUID) -> None:
+        if self.redis is None:
+            return
+        refs = await self.redis.hincrby(PRESENCE_REFS_KEY, str(user_id), 1)
+        if refs == 1:
+            await self.redis.zadd(
+                PRESENCE_ONLINE_KEY, {str(user_id): time.time() + PRESENCE_TTL_SECONDS}
+            )
+
+    async def refresh_user_presence(self, user_id: uuid.UUID) -> None:
+        if self.redis is None:
+            return
+        await self.redis.zadd(
+            PRESENCE_ONLINE_KEY, {str(user_id): time.time() + PRESENCE_TTL_SECONDS}
+        )
+
+    async def set_user_offline(self, user_id: uuid.UUID) -> bool:
+        if self.redis is None:
+            return False
+        refs = await self.redis.hincrby(PRESENCE_REFS_KEY, str(user_id), -1)
+        if refs <= 0:
+            await self.redis.hdel(PRESENCE_REFS_KEY, str(user_id))
+            await self.redis.zrem(PRESENCE_ONLINE_KEY, str(user_id))
+            return True
+        return False
+
+    async def is_user_online(self, user_id: uuid.UUID) -> bool:
+        if self.redis is None:
+            return False
+        score = await self.redis.zscore(PRESENCE_ONLINE_KEY, str(user_id))
+        return score is not None and score > time.time()
+
+    async def filter_online(self, user_ids) -> set[uuid.UUID]:
+        if self.redis is None or not user_ids:
+            return set()
+        members = await self.redis.zrangebyscore(
+            PRESENCE_ONLINE_KEY, time.time(), "+inf"
+        )
+        online = {uuid.UUID(m) for m in members}
+        return online & set(user_ids)
 
 
 broker = RealtimeBroker()

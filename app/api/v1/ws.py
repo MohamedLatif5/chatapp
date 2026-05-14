@@ -71,6 +71,18 @@ async def _handle_typing(user_id: uuid.UUID, data: dict) -> None:
     )
 
 
+async def _update_last_seen(user_id: uuid.UUID) -> None:
+    from datetime import UTC, datetime
+
+    from app.models import User
+
+    async with db_session.SessionLocal() as db:
+        user = await db.get(User, user_id)
+        if user is not None:
+            user.last_seen_at = datetime.now(UTC)
+            await db.commit()
+
+
 @router.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket, token: str = Query(...)) -> None:
     try:
@@ -82,11 +94,13 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query(...)) -> N
     user_id = uuid.UUID(payload["sub"])
     await websocket.accept()
     broker.manager.connect(websocket, user_id)
+    await broker.set_user_online(user_id)
     try:
         while True:
             data = await websocket.receive_json()
             event_type = data.get("type")
             if event_type == "ping":
+                await broker.refresh_user_presence(user_id)
                 await websocket.send_json({"type": "pong"})
             elif event_type == "message":
                 await _handle_ws_message(user_id, data)
@@ -96,3 +110,5 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query(...)) -> N
         pass
     finally:
         broker.manager.disconnect(websocket, user_id)
+        if await broker.set_user_offline(user_id):
+            await _update_last_seen(user_id)
