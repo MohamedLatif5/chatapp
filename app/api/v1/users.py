@@ -1,15 +1,25 @@
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel, Field
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user
+from app.api.deps import get_broker, get_current_user
 from app.db.session import get_db
 from app.models import User
 from app.schemas.user import UserOut, UserUpdate
+from app.services.realtime import RealtimeBroker
 
 router = APIRouter(prefix="/users", tags=["users"])
+
+
+class PresenceRequest(BaseModel):
+    user_ids: list[uuid.UUID] = Field(max_length=200)
+
+
+class UserPresenceOut(UserOut):
+    online: bool
 
 
 @router.get("", response_model=list[UserOut])
@@ -49,13 +59,29 @@ async def update_me(
     return current_user
 
 
-@router.get("/{user_id}", response_model=UserOut)
+@router.get("/{user_id}", response_model=UserPresenceOut)
 async def get_user(
     user_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     _: User = Depends(get_current_user),
-) -> User:
+    broker: RealtimeBroker = Depends(get_broker),
+) -> dict:
     user = await db.get(User, user_id)
     if user is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
-    return user
+    out = UserOut.model_validate(user).model_dump(mode="json")
+    out["online"] = await broker.is_user_online(user_id)
+    return out
+
+
+@router.post("/presence")
+async def get_presence(
+    payload: PresenceRequest,
+    _: User = Depends(get_current_user),
+    broker: RealtimeBroker = Depends(get_broker),
+) -> list[dict]:
+    online = await broker.filter_online(payload.user_ids)
+    return [
+        {"user_id": str(uid), "online": uid in online}
+        for uid in payload.user_ids
+    ]
