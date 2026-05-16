@@ -35,6 +35,21 @@ async def get_member_ids(
     return list((await db.execute(stmt)).scalars().all())
 
 
+async def get_contact_ids(db: AsyncSession, user_id: uuid.UUID) -> list[uuid.UUID]:
+    my_conversations = (
+        select(ConversationMember.conversation_id)
+        .where(ConversationMember.user_id == user_id)
+        .subquery()
+    )
+    stmt = (
+        select(ConversationMember.user_id)
+        .join(my_conversations, my_conversations.c.conversation_id == ConversationMember.conversation_id)
+        .where(ConversationMember.user_id != user_id)
+        .distinct()
+    )
+    return list((await db.execute(stmt)).scalars().all())
+
+
 async def get_or_create_dm(db: AsyncSession, me: User, other_id: uuid.UUID) -> Conversation:
     if other_id == me.id:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Cannot create a DM with yourself")

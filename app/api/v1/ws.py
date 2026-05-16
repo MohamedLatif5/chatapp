@@ -83,6 +83,15 @@ async def _update_last_seen(user_id: uuid.UUID) -> None:
             await db.commit()
 
 
+async def _broadcast_presence(user_id: uuid.UUID, online: bool) -> None:
+    async with db_session.SessionLocal() as db:
+        recipient_ids = await conversation_service.get_contact_ids(db, user_id)
+    await broker.publish_presence(
+        {"type": "user.online" if online else "user.offline", "user_id": str(user_id)},
+        recipient_ids,
+    )
+
+
 @router.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket, token: str = Query(...)) -> None:
     try:
@@ -95,6 +104,7 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query(...)) -> N
     await websocket.accept()
     broker.manager.connect(websocket, user_id)
     await broker.set_user_online(user_id)
+    await _broadcast_presence(user_id, True)
     try:
         while True:
             data = await websocket.receive_json()
@@ -112,3 +122,4 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query(...)) -> N
         broker.manager.disconnect(websocket, user_id)
         if await broker.set_user_offline(user_id):
             await _update_last_seen(user_id)
+            await _broadcast_presence(user_id, False)
