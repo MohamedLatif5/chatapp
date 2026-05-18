@@ -3,7 +3,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 
-from app.api.v1 import auth, conversations, health, messages, users, ws
+from app.api.v1 import auth, conversations, health, messages, search, users, ws
 from app.core.config import settings
 from app.services.realtime import broker
 
@@ -29,3 +29,4 @@ app.include_router(users.router, prefix=settings.API_V1_PREFIX)
 app.include_router(conversations.router, prefix=settings.API_V1_PREFIX)
 app.include_router(messages.router, prefix=settings.API_V1_PREFIX)
 app.include_router(ws.router, prefix=settings.API_V1_PREFIX)
+app.include_router(search.router, prefix=settings.API_V1_PREFIX)
