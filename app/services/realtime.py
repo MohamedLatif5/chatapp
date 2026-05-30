@@ -78,7 +78,9 @@ class RealtimeBroker:
                 continue
             try:
                 payload = json.loads(event["data"])
-                recipients = payload.pop("recipients", [])
+                recipients = {
+                    uuid.UUID(r) for r in payload.pop("recipients", []) if r
+                }
                 await self.manager.send_to_users(recipients, payload)
             except Exception:
                 continue
@@ -100,11 +102,10 @@ class RealtimeBroker:
     async def set_user_online(self, user_id: uuid.UUID) -> None:
         if self.redis is None:
             return
-        refs = await self.redis.hincrby(PRESENCE_REFS_KEY, str(user_id), 1)
-        if refs == 1:
-            await self.redis.zadd(
-                PRESENCE_ONLINE_KEY, {str(user_id): time.time() + PRESENCE_TTL_SECONDS}
-            )
+        await self.redis.hincrby(PRESENCE_REFS_KEY, str(user_id), 1)
+        await self.redis.zadd(
+            PRESENCE_ONLINE_KEY, {str(user_id): time.time() + PRESENCE_TTL_SECONDS}
+        )
 
     async def refresh_user_presence(self, user_id: uuid.UUID) -> None:
         if self.redis is None:

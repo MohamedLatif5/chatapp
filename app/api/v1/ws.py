@@ -111,6 +111,7 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query(...)) -> N
             event_type = data.get("type")
             if event_type == "ping":
                 await broker.refresh_user_presence(user_id)
+                await _update_last_seen(user_id)
                 await websocket.send_json({"type": "pong"})
             elif event_type == "message":
                 await _handle_ws_message(user_id, data)
