@@ -104,7 +104,7 @@ async def create_group(
         type=ConversationType.GROUP, name=name, created_by_id=me.id
     )
     db.add(conversation)
-    db.flush()
+    await db.flush()
     db.add(
         ConversationMember(
             conversation=conversation, user_id=me.id, role=MemberRole.ADMIN.value
