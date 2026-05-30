@@ -5,7 +5,7 @@ from enum import StrEnum
 from sqlalchemy import BigInteger, DateTime, ForeignKey, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.db.base import Base, UUIDMixin
+from app.db.base import Base, TimestampMixin, UUIDMixin
 
 
 class ConversationType(StrEnum):
@@ -18,7 +18,7 @@ class MemberRole(StrEnum):
     MEMBER = "member"
 
 
-class Conversation(UUIDMixin, Base):
+class Conversation(UUIDMixin, TimestampMixin, Base):
     __tablename__ = "conversations"
 
     type: Mapped[str] = mapped_column(String(10), nullable=False, index=True)
