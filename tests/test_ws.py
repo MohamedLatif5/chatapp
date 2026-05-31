@@ -61,15 +61,10 @@ def test_ws_typing_indicator(ws_client):
         headers={"Authorization": f"Bearer {first['access_token']}"},
     ).json()
 
-    with ws_client.websocket_connect(ws_url(first["access_token"])):
-        with ws_client.websocket_connect(ws_url(second["access_token"])):
-            pass
-
     with ws_client.websocket_connect(ws_url(first["access_token"])) as ws_a:
         with ws_client.websocket_connect(ws_url(second["access_token"])) as ws_b:
             ws_a.send_json({"type": "typing", "conversation_id": dm["id"]})
-            event = ws_b.receive_json()
-            assert event["type"] == "typing"
+            event = _recv_until(ws_b, "typing")
             assert event["user_id"] == first["user_id"]
             assert event["conversation_id"] == dm["id"]
 
